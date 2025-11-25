@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>IHM — Sistema de Filtragem de Água (Funcional)</title>
+<style>
+  :root{
+    --bg:#0f1720; --card:#0b1220; --accent:#19a3a3; --accent-2:#7ad0c9;
+    --ok:#1fb97f; --warn:#ffb020; --err:#ff5c5c; --text:#e6f0f0;
+    font-family: Inter, Roboto, system-ui, -apple-system, "Segoe UI", Arial;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1220,#0f1720);color:var(--text);min-height:100vh}
+  .app{max-width:1200px;margin:20px auto;padding:18px;display:grid;grid-template-columns:1fr 360px;gap:18px}
+  header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brand{display:flex;gap:12px;align-items:center}
+  .logo{width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-weight:700}
+  h1{margin:0;font-size:18px}
+  .status{display:flex;gap:10px;align-items:center}
+  .status .dot{width:12px;height:12px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px rgba(31,185,127,0.22)}
+  main{display:grid;gap:16px}
+  .left{display:grid;gap:16px}
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .card{background:rgba(255,255,255,0.03);padding:12px;border-radius:10px;min-height:84px;display:flex;flex-direction:column;justify-content:space-between}
+  .card .label{font-size:13px;color:#bcd;opacity:0.9}
+  .card .value{font-size:20px;font-weight:700}
+  .controls{display:flex;gap:12px;flex-wrap:wrap}
+  .control{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:10px;min-width:160px}
+  .btn{display:inline-block;padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:#032;cursor:pointer;font-weight:600}
+  .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--text)}
+  .toggle{display:flex;gap:8px;align-items:center}
+  .toggle input{width:36px;height:22px;appearance:none;background:#233; border-radius:22px;position:relative;outline:none;cursor:pointer}
+  .toggle input:checked{background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+  .toggle input::after{content:"";position:absolute;width:18px;height:18px;background:#fff;border-radius:50%;top:2px;left:2px;transition:all .18s}
+  .toggle input:checked::after{transform:translateX(14px)}
+  .right{display:flex;flex-direction:column;gap:12px}
+  .panel{background:rgba(255,255,255,0.03);padding:12px;border-radius:10px}
+  #chart{width:100%;height:180px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border-radius:8px}
+  .alarms{max-height:220px;overflow:auto}
+  .alarm{padding:8px;border-radius:8px;margin-bottom:8px;background:rgba(255,80,80,0.08);border-left:4px solid var(--err);font-size:13px}
+  .ok{background:rgba(31,185,127,0.06);border-left:4px solid var(--ok)}
+  footer{grid-column:1/-1;margin-top:6px;color:#9fb}
+  .small{font-size:13px;color:#9fb}
+  label{display:block;font-size:13px;margin-bottom:6px}
+  select,input[type=range]{width:100%}
+  .treatment-step{padding:8px;border-radius:8px;background:rgba(0,0,0,0.08);margin-top:6px;transition:all .2s}
+  .log-output{background:rgba(0,0,0,0.05);padding:8px;border-radius:6px;max-height:140px;overflow:auto}
+  .flow-col{flex:1;min-width:240px;padding:12px;border-radius:10px;background:linear-gradient(180deg,rgba(15,23,32,0.95),rgba(11,17,32,0.95));}
+  .flow-col ol{color:#cfe;line-height:1.6;margin:0;padding-left:18px}
+  .highlight { border:2px solid rgba(122,208,201,0.35); box-shadow:0 6px 18px rgba(17,117,111,0.12); opacity:1 !important; }
+  @media (max-width:980px){.app{grid-template-columns:1fr;}.cards{grid-template-columns:1fr 1fr}}
+  @media (max-width:540px){.cards{grid-template-columns:1fr}.controls{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="app" role="application" aria-label="IHM sistema de filtragem de água">
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">H₂O</div>
+      <div>
+        <h1>Arché — Painel de Operação (Funcional)</h1>
+        <div class="small">Sistema: Reaproveitamento & Filtragem | Unidade: Demo Simulada</div>
+      </div>
+    </div>
+    <div class="status" aria-live="polite">
+      <div style="text-align:right">
+        <div class="small">Status geral</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="dot" id="netdot" title="Conexão"></div>
+          <div id="nettext">Online</div>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="small">Nível</div>
+        <div id="levelSummary">—</div>
+      </div>
+      <div style="text-align:right">
+        <div class="small">Última leitura</div>
+        <div id="lastRead">—</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="left">
+    <section class="panel">
+      <strong>Entrada / Fonte & Sensores</strong>
+      <div style="display:flex;gap:12px;margin-top:8px;align-items:center">
+        <div style="flex:1">
+          <label for="waterType">Tipo de água recebida</label>
+          <select id="waterType" aria-label="Tipo de água">
+            <option value="rain">Água de Chuva</option>
+            <option value="seawater">Água Salgada</option>
+            <option value="waste">Água de Dejetos</option>
+          </select>
+          <div style="margin-top:8px;font-size:13px;display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="autoIdentify" checked />
+            <label for="autoIdentify" style="margin:0;color:#bcd">Identificação automática do tipo pela leitura dos sensores</label>
+          </div>
+        </div>
+        <div style="width:180px">
+          <label for="inflow">Vazão de entrada (L/h)</label>
+          <input id="inflow" type="range" min="50" max="2000" value="450">
+        </div>
+        <div style="width:120px">
+          <label for="densitySensor">Densidade</label>
+          <div id="densitySensor">— g/mL</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">
+        <div style="flex:1">
+          <label>Sensor de Salinidade (simulado)</label>
+          <div id="salinityVal" class="card" style="padding:10px">— PSU</div>
+        </div>
+        <div style="flex:1">
+          <label>Sensor de Condutividade / TDS</label>
+          <div id="tdsVal" class="card" style="padding:10px">— ppm</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cards" aria-label="Leituras dos sensores">
+      <div class="card" id="card-ph">
+        <div class="label">pH</div>
+        <div class="value" id="phVal">--</div>
+        <div class="small">Faixa ideal: 6.5 – 8.5</div>
+      </div>
+      <div class="card" id="card-turb">
+        <div class="label">Turbidez (NTU)</div>
+        <div class="value" id="turbVal">--</div>
+        <div class="small">Alvo: &lt; 1 NTU</div>
+      </div>
+      <div class="card" id="card-level">
+        <div class="label">Nível do Reservatório</div>
+        <div class="value" id="levelVal">--</div>
+        <div class="small">Capacidade: 10.000 L</div>
+      </div>
+      <div class="card" id="card-flow">
+        <div class="label">Vazão atual</div>
+        <div class="value" id="flowVal">— L/h</div>
+        <div class="small">Temperatura</div>
+        <div id="tempVal" class="small">— °C</div>
+      </div>
+    </section>
+
+    <section class="panel controls" aria-label="Controles do sistema">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Atuadores & Tratamento</strong>
+        <div class="small">Modo: <span id="modeLabel">Automático</span></div>
+      </div>
+
+      <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+        <div class="control">
+          <div class="label">Bomba de Recalque</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+            <button class="btn" id="pumpToggle">LIGAR</button>
+            <button class="btn ghost" id="pumpAuto">FORÇAR ON</button>
+          </div>
+          <div class="small" style="margin-top:8px">Estado: <span id="pumpState">Desligada</span></div>
+        </div>
+
+        <div class="control">
+          <div class="label">Válvula de Entrada</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+            <button class="btn" id="valveOpen">ABRIR</button>
+            <button class="btn ghost" id="valveClose">FECHAR</button>
+          </div>
+          <div class="small" style="margin-top:8px">Estado: <span id="valveState">Fechada</span></div>
+        </div>
+
+        <div class="control">
+          <div class="label">Modo Manual / Automático</div>
+          <div class="toggle" style="margin-top:8px">
+            <input type="checkbox" id="modeToggle" aria-label="Alternar modo manual automático" checked>
+            <div class="small" id="modeSub">Controle automático ativo</div>
+          </div>
+        </div>
+
+        <div class="control" style="flex:1">
+          <div class="label">Ações Rápidas / Etapas</div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn ghost" id="startTreatment">Iniciar Tratamento</button>
+            <button class="btn ghost" id="stopTreatment">Parar Tratamento</button>
+            <button class="btn" id="ackAlarms">Reconhecer Alarmes</button>
+          </div>
+          <div class="small" style="margin-top:8px" id="lastAction">Última ação: —</div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label>Sequência de tratamento</label>
+        <div id="treatmentSteps">
+          <!-- preenchido via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Fluxograma Visual das Etapas (detalhado por tipo) -->
+    <section class="panel" aria-label="Fluxograma do Tratamento">
+      <strong>Fluxograma do Processo de Tratamento (por tipo)</strong>
+      <div id="flowchart" style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">
+        <!-- Coluna Salgada -->
+        <div class="flow-col" id="flow-salgada">
+          <div style="font-weight:700;margin-bottom:8px;color:var(--text)">Água Salgada</div>
+          <ol id="flowlist-salgada"></ol>
+          <div class="small" style="margin-top:8px;color:#9fb">Notas: RO reduz drasticamente TDS; pré-filtragem protege membranas.</div>
+        </div>
+
+        <!-- Coluna Chuva -->
+        <div class="flow-col" id="flow-chuva">
+          <div style="font-weight:700;margin-bottom:8px;color:var(--text)">Água de Chuva</div>
+          <ol id="flowlist-chuva"></ol>
+          <div class="small" style="margin-top:8px;color:#9fb">Notas: chuva tem baixo TDS; priorizar remoção de partículas e desinfecção.</div>
+        </div>
+
+        <!-- Coluna Dejetos -->
+        <div class="flow-col" id="flow-dejetos">
+          <div style="font-weight:700;margin-bottom:8px;color:var(--text)">Água de Dejetos</div>
+          <ol id="flowlist-dejetos"></ol>
+          <div class="small" style="margin-top:8px;color:#9fb">Notas: dejetos exigem etapas físicas e químicas; garantir tempos e remoção de matéria orgânica.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Gráfico de histórico">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Últimas leituras (simuladas)</strong>
+        <div class="small">Atualiza automático</div>
+      </div>
+      <canvas id="chart"></canvas>
+    </section>
+
+    <section class="panel" aria-label="Logs e manutenção">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Manutenção / Logs</strong>
+        <div class="small">Registro breve</div>
+      </div>
+      <div style="margin-top:8px">
+        <textarea id="logNote" placeholder="Registrar intervenção (ex: troca de cartucho) ..." style="width:100%;min-height:60px;border-radius:8px;padding:8px;border:0;background:rgba(255,255,255,0.02);color:var(--text)"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn" id="saveLog">Salvar</button>
+          <button class="btn ghost" id="clearLogs">Limpar logs</button>
+        </div>
+      </div>
+      <div id="logList" style="margin-top:8px;max-height:120px;overflow:auto"></div>
+    </section>
+  </main>
+
+  <aside class="right">
+    <div class="panel">
+      <strong>Painel de Alarmes</strong>
+      <div class="small">Problemas ativos e recomendações</div>
+      <div class="alarms" id="alarms"></div>
+    </div>
+
+    <div class="panel">
+      <strong>Indicadores rápidos</strong>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+        <div class="small">Salinidade</div>
+        <div id="salQuick" style="font-weight:700">— PSU</div>
+        <div class="small">Densidade</div>
+        <div id="densQuick" style="font-weight:700">— g/mL</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <strong>Checklist de operação</strong>
+      <ul style="padding-left:16px;margin:8px 0 0 0;color:#bcd">
+        <li>Verificar pré-filtros</li>
+        <li>Monitorar turbidez</li>
+        <li>Checar bombas e válvulas</li>
+        <li>Registrar intervenções</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <strong>Logs rápidos</strong>
+      <div class="log-output" id="quickLog">Nenhuma ação ainda.</div>
+    </div>
+  </aside>
+
+  <footer>
+    <div class="small">Protótipo IHM — FiltraFlow • Dados simulados para demonstração • Integração real: MQTT/Modbus/HTTP via API</div>
+  </footer>
+</div>
+
+<script>
+/* -----------------------------------------------------------
+   IHM completo com classificação automática e execução por tipo
+   - Cada tipo tem sua sequência (base + opcionais)
+   - Ao iniciar, carrega apenas a sequência do tipo detectado
+   - Fluxograma visual é atualizado e etapa atual é destacada
+   -----------------------------------------------------------*/
+
+const state = {
+  waterType: 'rain', inflow:450,
+  ph:7.0, turb:0.5, level:7200, flow:450, temp:22,
+  salinity:0, density:0.998, tds:150,
+  pumpOn:false, valveOpen:false, autoMode:true,
+  treatmentRunning:false, treatmentStage:0,
+  logs:[], alarms:[], chartBuffer:[]
+};
+
+const el = id=>document.getElementById(id);
+const waterTypeEl = el('waterType');
+const inflowEl = el('inflow');
+
+function init(){
+  // fill flow lists in fluxograma
+  populateFlowLists();
+  waterTypeEl.addEventListener('change', e=>{ state.waterType = e.target.value; setInitialSensorForType(); renderTreatmentSteps(); addQuickLog('Fonte alterada manualmente: '+e.target.options[e.target.selectedIndex].text); });
+  inflowEl.addEventListener('input', e=>{ state.inflow = +e.target.value; el('flowVal').textContent = state.inflow + ' L/h'; });
+
+  el('pumpToggle').addEventListener('click', ()=>{ state.pumpOn = !state.pumpOn; el('pumpToggle').textContent = state.pumpOn ? 'DESLIGAR' : 'LIGAR'; el('pumpState').textContent = state.pumpOn ? 'Ligada' : 'Desligada'; addLog('Bomba '+(state.pumpOn?'ligada':'desligada')); });
+  el('pumpAuto').addEventListener('click', ()=>{ state.pumpOn = true; el('pumpToggle').textContent='DESLIGAR'; el('pumpState').textContent='Ligada'; addLog('Bomba forçada ON'); });
+  el('valveOpen').addEventListener('click', ()=>{ state.valveOpen=true; el('valveState').textContent='Aberta'; addLog('Válvula aberta'); });
+  el('valveClose').addEventListener('click', ()=>{ state.valveOpen=false; el('valveState').textContent='Fechada'; addLog('Válvula fechada'); });
+
+  el('modeToggle').addEventListener('change', (e)=>{ state.autoMode = e.target.checked; el('modeLabel').textContent = state.autoMode ? 'Automático' : 'Manual'; el('modeSub').textContent = state.autoMode ? 'Controle automático ativo' : 'Modo manual'; addLog('Modo: '+(state.autoMode?'Automático':'Manual')) });
+
+  el('startTreatment').addEventListener('click', ()=>{ startTreatmentSequence(); });
+  el('stopTreatment').addEventListener('click', ()=>{ stopTreatmentSequence(); });
+  el('ackAlarms').addEventListener('click', ()=>{ state.alarms = []; renderAlarms(); addLog('Alarmes reconhecidos'); });
+
+  el('saveLog').addEventListener('click', ()=>{ const v = el('logNote').value.trim(); if(!v) return; addLog(v); el('logNote').value=''; });
+  el('clearLogs').addEventListener('click', ()=>{ state.logs=[]; renderLogs(); });
+
+  setInitialSensorForType(); renderTreatmentSteps(); renderLogs();
+}
+
+function setInitialSensorForType(){
+  // presets realistic-ish for types (used when user manually chooses)
+  if(state.waterType==='rain'){
+    state.ph = 6.8 + Math.random()*0.6; state.turb = 0.2 + Math.random()*0.6; state.tds = 30 + Math.random()*80; state.salinity=0; state.density=0.998 + Math.random()*0.002;
+  } else if(state.waterType==='seawater'){
+    state.ph = 8.0 + Math.random()*0.4; state.turb = 0.5 + Math.random()*1.5; state.tds = 30000 + Math.random()*2000; state.salinity=34 + Math.random()*2; state.density=1.025 + Math.random()*0.005;
+  } else if(state.waterType==='waste'){
+    state.ph = 6.0 + Math.random()*1.5; state.turb = 5 + Math.random()*10; state.tds = 800 + Math.random()*500; state.salinity=1 + Math.random()*2; state.density=1.01 + Math.random()*0.01;
+  }
+}
+
+/* Classification by sensor values (simple rules, tweakable) */
+function classifyWaterType(){
+  const sal = parseFloat(state.salinity);
+  const tds = parseFloat(state.tds);
+  const turb = parseFloat(state.turb);
+  const dens = parseFloat(state.density);
+
+  let detected = state.waterType;
+
+  if(sal >= 10 || tds >= 5000) detected = 'seawater';
+  else if(turb >= 5 || (tds >= 500 && turb >= 2)) detected = 'waste';
+  else if(sal < 2 && tds < 500 && turb < 2) detected = 'rain';
+  else if(dens >= 1.02) detected = 'seawater';
+
+  if(detected !== state.waterType){
+    state.waterType = detected;
+    waterTypeEl.value = detected;
+    renderTreatmentSteps();
+    addQuickLog('Auto-detectado tipo de água: '+ (detected==='seawater'? 'Salgada' : detected==='rain'? 'Chuva' : 'Dejetos'));
+  }
+}
+
+/* Sequences ricas por tipo */
+function getSequenceForType(type){
+  if(type==='seawater') return [
+    {name:'Pré-filtragem (grade, 50μm)', device:'Grade + Filtro 50μm'},
+    {name:'Filtragem Sedimentar (areia)', device:'Filtro de areia'},
+    {name:'Filtragem Fina (carvão ativado)', device:'Carvão ativado'},
+    {name:'Antiscalant / Pré-teste', device:'Doseador anti-incrustante'},
+    {name:'Osmose Reversa (RO)', device:'Módulo RO'},
+    {name:'Pós-ajuste de pH', device:'Doseador pH'},
+    {name:'Filtragem Polimento (cartucho 1μm) — opcional', device:'Cartucho 1μm'},
+    {name:'Esterilização UV — opcional', device:'UV'}
+  ];
+  if(type==='rain') return [
+    {name:'Gradeamento (remoção grossa)', device:'Grade'},
+    {name:'Pré-filtragem (50-100μm)', device:'Filtro 100μm'},
+    {name:'Filtragem multicamadas (areia + cascalho)', device:'Filtro multicamadas'},
+    {name:'Carvão Ativado (sabor/odor) — opcional', device:'Carvão'},
+    {name:'Polimento por membrana (UF) — opcional', device:'UF'},
+    {name:'Ajuste de pH', device:'Doseador pH'},
+    {name:'Desinfecção UV — opcional', device:'UV'}
+  ];
+  // waste / dejetos
+  return [
+    {name:'Gradeamento (sólidos grandes)', device:'Grade'},
+    {name:'Tanque de Decantação Primária', device:'Decantador'},
+    {name:'Floculação e Coagulação', device:'Doseadores coagulante'},
+    {name:'Decantação Secundária / Espessamento', device:'Decantador'},
+    {name:'Filtragem (areia + membrana)', device:'Filtro + Membranas'},
+    {name:'Tratamento Biológico (se aplicável) — opcional', device:'Biofiltro / Lodos ativados'},
+    {name:'Ajuste de pH', device:'Doseador pH'},
+    {name:'Cloração / UV — opcional', device:'Cloro / UV'},
+    {name:'Oxidação Avançada — opcional', device:'AOP (ozônio/H2O2)'}
+  ];
+}
+
+/* Renderiza os steps no painel e no fluxograma */
+function renderTreatmentSteps(){
+  const container = el('treatmentSteps'); container.innerHTML='';
+  const steps = getSequenceForType(state.waterType);
+  steps.forEach((s,i)=>{
+    const d = document.createElement('div'); d.className='treatment-step'; d.id='step-'+i;
+    d.innerHTML = `<strong>${i+1}. ${s.name}</strong><div class="small">${s.device}</div>`;
+    container.appendChild(d);
+  });
+
+  // update visual flow lists
+  populateFlowLists();
+  renderTreatmentActive();
+}
+
+/* popula os fluxogramas (listas) com base nas sequências */
+function populateFlowLists(){
+  const types = ['salgada','chuva','dejetos'];
+  const map = {
+    salgada:getSequenceForType('seawater'),
+    chuva:getSequenceForType('rain'),
+    dejetos:getSequenceForType('waste')
+  };
+  document.getElementById('flowlist-salgada').innerHTML = map.salgada.map(s=>`<li>${s.name}</li>`).join('');
+  document.getElementById('flowlist-chuva').innerHTML = map.chuva.map(s=>`<li>${s.name}</li>`).join('');
+  document.getElementById('flowlist-dejetos').innerHTML = map.dejetos.map(s=>`<li>${s.name}</li>`).join('');
+}
+
+/* Simulação de sensores e lógica básica de alarmes/controle */
+function updateReadings(){
+  // pequenas variações
+  state.ph = Math.max(4, Math.min(10, +(state.ph + (Math.random()*2-1)*0.05).toFixed(2)));
+  state.tds = Math.max(10, Math.min(50000, Math.round(state.tds + (Math.random()*2-1)*8)));
+  state.turb = Math.max(0, Math.min(50, +(state.turb + (Math.random()*2-1)*0.15).toFixed(2)));
+  // densidade/salinidade drift
+  if(state.waterType==='seawater'){ state.salinity = +(34 + (Math.random()*2-1)*0.6).toFixed(2); state.density = +(1.024 + (Math.random()*0.004-0.002)).toFixed(3); }
+  else if(state.waterType==='waste'){ state.salinity = +(1 + (Math.random()*2-1)*0.6).toFixed(2); state.density = +(1.01 + (Math.random()*0.01-0.002)).toFixed(3); }
+  else { state.salinity = +(Math.max(0, (Math.random()*0.5))).toFixed(2); state.density = +(0.998 + Math.random()*0.004).toFixed(3); }
+
+  // flow & level logic
+  state.flow = state.inflow;
+  if(state.valveOpen && state.pumpOn){ state.level = Math.min(10000, state.level + state.flow*0.001 - Math.random()*6); }
+  else if(state.pumpOn && !state.valveOpen){ state.level = Math.max(0, state.level - state.flow*0.001 - Math.random()*6); }
+  else { state.level = Math.max(0, state.level - Math.random()*6); }
+
+  // se identificação automática ligada, classifica o tipo com base nos sensores
+  try {
+    const autoId = document.getElementById('autoIdentify').checked;
+    if(autoId) classifyWaterType();
+  } catch(e){}
+
+  // push to chart buffer
+  pushChartPoint({t:Date.now(), ph:state.ph, tds:state.tds, turb:state.turb, level:state.level});
+  evaluateAlarms();
+  render();
+}
+
+/* Efeitos determinísticos por etapa */
+function executeStep(step){
+  if(!step) return;
+  const name = (step.name||'').toLowerCase();
+  if(name.includes('pré') || name.includes('gradeamento') || name.includes('pré-filtragem')){
+    state.turb = Math.max(0, +(state.turb - (0.6 + Math.random()*0.6)).toFixed(2));
+    state.tds = Math.max(0, state.tds - Math.round(5 + Math.random()*10));
+  } else if(name.includes('decant')){
+    state.turb = Math.max(0, +(state.turb - (1.0 + Math.random()*1.5)).toFixed(2));
+    state.tds = Math.max(0, state.tds - Math.round(10 + Math.random()*30));
+  } else if(name.includes('floc') || name.includes('coagul')){
+    state.turb = Math.max(0, +(state.turb - (1.2 + Math.random()*1.2)).toFixed(2));
+  } else if(name.includes('filtra') || name.includes('filtração') || name.includes('multicamadas')){
+    state.turb = Math.max(0, +(state.turb - (1.5 + Math.random()*2)).toFixed(2));
+    state.tds = Math.max(0, state.tds - Math.round(20 + Math.random()*60));
+  } else if(name.includes('osmose') || name.includes('ro')){
+    const reduction = state.waterType==='seawater' ? Math.round(24000 + Math.random()*2000) : Math.round(500 + Math.random()*200);
+    state.tds = Math.max(50, state.tds - reduction);
+    state.salinity = Math.max(0, +(state.salinity - (state.waterType==='seawater'?30:0.5)).toFixed(2));
+    state.turb = Math.max(0, +(state.turb - (0.8 + Math.random()*1)).toFixed(2));
+  } else if(name.includes('ajuste') || name.includes('ph')){
+    const target = 7.5;
+    state.ph = +(state.ph + (target - state.ph) * (0.25 + Math.random()*0.25)).toFixed(2);
+  } else if(name.includes('uv') || name.includes('clora') || name.includes('desinfec')){
+    state.turb = Math.max(0, +(state.turb - (0.4 + Math.random()*0.8)).toFixed(2));
+  } else if(name.includes('oxidação')){
+    state.tds = Math.max(0, state.tds - Math.round(30 + Math.random()*80));
+    state.turb = Math.max(0, +(state.turb - (0.6 + Math.random()*1.2)).toFixed(2));
+  }
+}
+
+/* Tratamento determinístico atrelado ao tipo */
+let currentSequence = [];
+let ticksOnStage = 0;
+let treatmentInterval = null;
+
+function getStageDurationCycles(step){
+  const name = (step.name||'').toLowerCase();
+  if(name.includes('osmose') || name.includes('oxidação') || name.includes('decant')) return 4;
+  if(name.includes('filtra') || name.includes('floc') || name.includes('multicamadas')) return 3;
+  return 2;
+}
+
+function startTreatmentSequence(){
+  if(state.treatmentRunning) { addLog('Tratamento já em execução'); return; }
+  try { const autoId = document.getElementById('autoIdentify').checked; if(autoId) classifyWaterType(); } catch(e){}
+  currentSequence = getSequenceForType(state.waterType).slice();
+  if(currentSequence.length===0){ addLog('Nenhuma sequência definida para este tipo'); return; }
+  state.treatmentRunning = true; state.treatmentStage = 0; ticksOnStage = 0;
+  addLog('Tratamento iniciado para: '+(waterTypeEl.options[waterTypeEl.selectedIndex].text)); renderTreatmentActive();
+  treatmentInterval = setInterval(()=>{
+    const step = currentSequence[state.treatmentStage];
+    if(!step){ stopTreatmentSequence(); addLog('Sequência finalizada'); return; }
+    executeStep(step);
+    ticksOnStage++;
+    const duration = getStageDurationCycles(step);
+    if(ticksOnStage >= duration){
+      state.treatmentStage++;
+      ticksOnStage = 0;
+    }
+    renderTreatmentActive();
+  }, 2000);
+}
+
+function stopTreatmentSequence(){
+  if(treatmentInterval) clearInterval(treatmentInterval);
+  treatmentInterval = null;
+  state.treatmentRunning = false; state.treatmentStage = 0; ticksOnStage = 0; currentSequence = [];
+  renderTreatmentActive(); addLog('Tratamento parado');
+}
+
+function renderTreatmentActive(){
+  const steps = getSequenceForType(state.waterType);
+  steps.forEach((s,i)=>{
+    const elStep = document.getElementById('step-'+i);
+    if(!elStep) return;
+    const activeIndex = state.treatmentRunning ? state.treatmentStage : -1;
+    if(i === activeIndex && state.treatmentRunning){
+      elStep.classList.add('highlight');
+      elStep.style.opacity='1';
+    } else {
+      elStep.classList.remove('highlight');
+      elStep.style.opacity = (i < state.treatmentStage ? '0.75' : '0.5');
+    }
+  });
+
+  // also highlight column in fluxograma
+  ['salgada','chuva','dejetos'].forEach(k=>{
+    const node = document.getElementById('flow-'+k);
+    if(!node) return;
+    node.classList.remove('highlight');
+  });
+  const colId = state.waterType==='seawater' ? 'flow-salgada' : state.waterType==='rain' ? 'flow-chuva' : 'flow-dejetos';
+  const colNode = document.getElementById(colId);
+  if(colNode) colNode.classList.add('highlight');
+
+  // highlight current step text inside column list
+  try{
+    const listId = state.waterType==='seawater' ? 'flowlist-salgada' : state.waterType==='rain' ? 'flowlist-chuva' : 'flowlist-dejetos';
+    const ol = document.getElementById(listId);
+    if(ol){
+      Array.from(ol.children).forEach((li,idx)=>{
+        li.style.opacity = (idx === state.treatmentStage ? '1' : (idx < state.treatmentStage ? '0.75' : '0.5'));
+        li.style.fontWeight = (idx === state.treatmentStage ? '700' : '400');
+      });
+    }
+  }catch(e){}
+}
+
+/* Alarms */
+function evaluateAlarms(){
+  const alarms = [];
+  if(state.turb > 5) alarms.push({type:'Turbidez crítica', desc:`Turbidez ${state.turb.toFixed(2)} NTU — reduzir fluxo e verificar pré-filtros`, level:'high'});
+  if(state.tds > 5000 && state.waterType==='seawater') alarms.push({type:'TDS alto (salgada)', desc:`TDS ${state.tds} ppm — verificar RO`, level:'medium'});
+  if(state.ph < 5.5 || state.ph > 9.5) alarms.push({type:'pH fora de faixa', desc:`pH ${state.ph} — ajustar dosagem`, level:'medium'});
+  if(state.level < 800) alarms.push({type:'Reservatório baixo', desc:`Nível ${Math.round(state.level)} L — reabastecer`, level:'low'});
+  if(state.salinity > 30 && state.waterType!=='seawater') alarms.push({type:'Salinidade inesperada', desc:`Salinidade ${state.salinity} PSU — possível contaminação`, level:'medium'});
+  state.alarms = alarms;
+}
+
+function renderAlarms(){
+  const alarmsDiv = el('alarms'); alarmsDiv.innerHTML='';
+  if(state.alarms.length===0){ const ok = document.createElement('div'); ok.className='alarm ok'; ok.textContent='Sem alarmes ativos'; alarmsDiv.appendChild(ok); }
+  else { state.alarms.forEach(a=>{ const elA = document.createElement('div'); elA.className='alarm'; elA.innerHTML = `<strong>${a.type}</strong><div class="small">${a.desc}</div>`; alarmsDiv.appendChild(elA); }); }
+}
+
+/* Logs */
+function addLog(txt){ state.logs.unshift({t:Date.now(), txt}); if(state.logs.length>200) state.logs.pop(); renderLogs(); el('lastAction').textContent = `Última ação: ${txt} — ${new Date().toLocaleTimeString()}`; addQuickLog(txt); }
+function renderLogs(){ const node = el('logList'); node.innerHTML=''; if(state.logs.length===0) node.innerHTML='<div class="small">Nenhum registro</div>'; else state.logs.forEach(l=>{ const d = document.createElement('div'); d.className='small'; d.style.marginBottom='6px'; d.textContent = `${new Date(l.t).toLocaleString()}: ${l.txt}`; node.appendChild(d); }); }
+function addQuickLog(txt){ const q = el('quickLog'); const now = new Date().toLocaleTimeString(); q.innerHTML = `${now} — ${txt}<br/>` + q.innerHTML; }
+
+/* Chart */
+const chartCV = el('chart'); chartCV.width = chartCV.clientWidth * devicePixelRatio; chartCV.height = chartCV.clientHeight * devicePixelRatio; const ctx = chartCV.getContext('2d'); ctx.scale(devicePixelRatio, devicePixelRatio);
+function pushChartPoint(pt){ state.chartBuffer.push(pt); if(state.chartBuffer.length>120) state.chartBuffer.shift(); drawChart(); }
+function drawChart(){ const w = chartCV.clientWidth, h = chartCV.clientHeight; ctx.clearRect(0,0,w,h); ctx.fillStyle='rgba(255,255,255,0.02)'; ctx.fillRect(0,0,w,h); ctx.strokeStyle='rgba(255,255,255,0.03)'; ctx.lineWidth=1; for(let y=0;y<4;y++){ ctx.beginPath(); ctx.moveTo(0,y*h/4); ctx.lineTo(w,y*h/4); ctx.stroke(); }
+  if(state.chartBuffer.length<2) return;
+  const turbMax = Math.max(2, ...state.chartBuffer.map(p=>p.turb)); const turbMin = Math.min(0, ...state.chartBuffer.map(p=>p.turb));
+  ctx.beginPath(); ctx.lineWidth=2; ctx.strokeStyle='rgba(122,208,201,1)'; state.chartBuffer.forEach((p,i)=>{ const x = (i/(state.chartBuffer.length-1))*w; const y = h - ((p.turb-turbMin)/(turbMax-turbMin))*h; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke();
+  const last = state.chartBuffer[state.chartBuffer.length-1]; ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.font='12px system-ui'; ctx.fillText(`Turbidez: ${last.turb.toFixed(2)} NTU`,8,16); ctx.fillText(`TDS: ${Math.round(last.tds)} ppm`,8,34);
+}
+
+/* Rendering UI */
+function render(){
+  el('phVal').textContent = state.ph.toFixed(2);
+  el('turbVal').textContent = state.turb.toFixed(2);
+  el('tdsVal').textContent = Math.round(state.tds)+' ppm';
+  el('salinityVal').textContent = state.salinity+' PSU';
+  el('salQuick').textContent = state.salinity+' PSU';
+  el('densitySensor').textContent = state.density+' g/mL';
+  el('densQuick').textContent = state.density+' g/mL';
+  el('levelVal').textContent = Math.round(state.level) + ' L';
+  el('levelSummary').textContent = `${Math.round(state.level/10000*100)}% (${Math.round(state.level)} L)`;
+  el('lastRead').textContent = new Date().toLocaleTimeString();
+  el('flowVal').textContent = `${state.flow} L/h`;
+  el('tempVal').textContent = `${state.temp} °C`;
+  renderAlarms();
+}
+
+/* Simple automatic control */
+function autoControlTick(){ if(!state.autoMode) return;
+  if(state.turb > 3.5){ state.pumpOn = false; addLog('Auto: parada da bomba devido turbidez alta'); }
+  else if(state.level < 2000){ state.pumpOn = true; addLog('Auto: bomba ligada por nível baixo'); }
+  if(state.turb > 2.5 && !state.treatmentRunning){ startTreatmentSequence(); }
+}
+
+/* Initialization */
+init(); render(); renderLogs(); pushChartPoint({t:Date.now(), ph:state.ph, turb:state.turb, tds:state.tds, level:state.level});
+addLog('Painel iniciado (modo simulado)');
+
+/* main intervals */
+setInterval(()=>{ if(state.autoMode) autoControlTick(); updateReadings(); }, 2500);
+window.addEventListener('resize',()=>{ chartCV.width = chartCV.clientWidth * devicePixelRatio; chartCV.height = chartCV.clientHeight * devicePixelRatio; ctx.scale(devicePixelRatio, devicePixelRatio); drawChart(); });
+
+</script>
+</body>
+</html>
